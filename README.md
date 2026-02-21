@@ -16,6 +16,11 @@ Inside the component, two Script CHOPs work together:
 1. **script_madmom_dnn** -- Core beat detection using madmom's recurrent neural network (RNN) and Dynamic Bayesian Network (DBN) processors.
 2. **script_madmom_post** -- Post-processing that adds synthetic beat continuation, time multiplier, beat counting, and bass energy-based breakdown detection.
 
+## Requirements
+
+- TouchDesigner 2025.32280+
+- Windows 11 (not tested under MacOS)
+
 ## Installation
 
 1. Copy `td_lastBeatStanding.tox`, `script_madmom_dnn.py`, and `script_madmom_post.py` into your project folder.
