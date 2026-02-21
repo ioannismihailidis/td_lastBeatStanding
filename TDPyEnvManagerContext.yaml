@@ -1,8 +1,8 @@
-active: true
+active: false
 mode: Conda Env
 envName: td_madmom_311
 installPath: Miniconda3
 pythonVersion: 3.11.14
-autoSetup: false
+autoSetup: true
 autoSetupReqs: []
 extraPaths: []
