@@ -26,10 +26,11 @@ Inside the component, two Script CHOPs work together:
 1. Open `td_lastBeatStanding_example.toe` in TouchDesigner. On first launch, Miniconda and all Python dependencies (including `madmom`) are automatically downloaded and installed via [tdPyEnvManager](https://derivative.ca/community-post/introducing-touchdesigner-python-environment-manager-tdpyenvmanager/72024). This happens during the TouchDesigner splash screen and may take a while.
 2. Once the network is visible, you should see a running beat detection process.
 <img width="1891" height="837" alt="image" src="https://github.com/user-attachments/assets/5824eec5-4d71-45ab-8710-2b183fa621e2" />
-3. The project folder now contains all necessary dependencies. To use the beat detection in any other project on your system, drag `td_lastBeatStanding.tox` into your project and make sure **Enable External Tox** is enabled.
 
 
 ## Usage
+
+The project folder now contains all necessary dependencies. To use the beat detection in any other project on your system, drag `td_lastBeatStanding.tox` into your project and make sure **Enable External Tox** is enabled.
 
 Connect an audio CHOP (e.g. Audio Device In, Audio File In) to the component's input. The component outputs a single CHOP with beat, bpm, phase, breakdown, and other channels that you can use to drive visuals, lighting, or any other downstream logic.
 
