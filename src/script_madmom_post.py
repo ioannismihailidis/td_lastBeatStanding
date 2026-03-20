@@ -1,4 +1,4 @@
-# script_madmom_post DAT (Script CHOP)
+﻿# script_madmom_post DAT (Script CHOP)
 # Author: Ioannis Mihailidis
 # Email:  ioannis@studiofarbraum.com
 # Web:    https://www.studiofarbraum.com

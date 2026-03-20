@@ -9,7 +9,10 @@
 import os, sys
 
 # --- CONDA / DLL PATH SETUP ---
-CONDA_ENV = os.path.join(project.folder, "Miniconda3", "envs", "td_madmom_311")
+# Resolve paths relative to the tox (parent COMP), falling back to project.folder
+_tox_par = me.parent().par.externaltox.eval() if me.parent() else ''
+_TOX_DIR = os.path.dirname(tdu.expandPath(_tox_par)) if _tox_par else project.folder
+CONDA_ENV = os.path.join(_TOX_DIR, "Miniconda3", "envs", "td_madmom_311")
 os.add_dll_directory(os.path.join(CONDA_ENV, "Library", "bin"))
 os.add_dll_directory(os.path.join(CONDA_ENV, "DLLs"))
 if os.path.join(CONDA_ENV, "Lib", "site-packages") not in sys.path:

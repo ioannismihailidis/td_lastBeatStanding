@@ -23,11 +23,9 @@ Inside the component, two Script CHOPs work together:
 
 ## Installation
 
-1. Copy `td_lastBeatStanding.tox`, `script_madmom_dnn.py`, and `script_madmom_post.py` into your project folder.
-2. Drag and drop the `.tox` into your TouchDesigner project.
-3. Miniconda and all Python dependencies (`madmom`, `numpy`) are automatically installed into the project folder via [tdPyEnvManager](https://derivative.ca/community-post/introducing-touchdesigner-python-environment-manager-tdpyenvmanager/72024).
-4. Connect an audio CHOP to the component's input.
-5. All parameters are available on the component's custom parameter pages (**Beat Detection** and **Post Processing**).
+1. Open `td_lastBeatStanding_example.toe` in TouchDesigner. On first launch, Miniconda and all Python dependencies (including `madmom`) are automatically downloaded and installed via [tdPyEnvManager](https://derivative.ca/community-post/introducing-touchdesigner-python-environment-manager-tdpyenvmanager/72024). This happens during the TouchDesigner splash screen and may take a while.
+2. Once the network is visible, you should see a running beat detection process.
+3. The project folder now contains all necessary dependencies. To use the beat detection in any other project on your system, drag `td_lastBeatStanding.tox` into your project and make sure **Enable External Tox** is enabled.
 
 ## Usage
 
