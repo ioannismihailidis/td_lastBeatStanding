@@ -62,4 +62,3 @@ dependencies:
   - scipy==1.17.0
   - git+https://github.com/CPJKU/madmom.git
 name: td_madmom_311
-prefix: C:\Users\janni\Desktop\td_lastBeatStanding\Miniconda3\envs\td_madmom_311
