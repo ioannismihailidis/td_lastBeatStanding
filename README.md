@@ -9,12 +9,7 @@ Real-time beat tracking component for TouchDesigner using madmom's RNN + DBN neu
 
 ## Overview
 
-**lastBeatStanding** is a self-contained TouchDesigner component (`.tox`) that provides robust, real-time beat detection from a live audio stream. Drop the `.tox` into your project, connect an audio source, and all parameters are exposed on the component's custom parameter pages.
-
-Inside the component, two Script CHOPs work together:
-
-1. **script_madmom_dnn** -- Core beat detection using madmom's recurrent neural network (RNN) and Dynamic Bayesian Network (DBN) processors.
-2. **script_madmom_post** -- Post-processing that adds synthetic beat continuation, time multiplier, beat counting, and bass energy-based breakdown detection.
+**lastBeatStanding** is a self-contained TouchDesigner component (`.tox`) that provides robust, real-time beat detection from a live audio stream.
 
 ## Requirements
 
