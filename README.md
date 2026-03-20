@@ -1,6 +1,6 @@
 # last beat standing - a realtime beat detector
 
-Real-time beat tracking component for TouchDesigner using madmom's RNN + DBN neural network processors. Distributed as a ready-to-use `.tox` component.
+Real-time beat tracking component for TouchDesigner using madmom's RNN + DBN neural network processors.
 
 ## Overview
 
