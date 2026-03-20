@@ -1,0 +1,22 @@
+{
+  "sample_rate": 44100,
+  "fps": 100,
+  "frame_size": 2048,
+  "hop_size": 441,
+  "num_features": 162,
+  "num_filter_bands": 81,
+  "fmin": 30,
+  "fmax": 17000,
+  "log_add": 1.0,
+  "log_mul": 1.0,
+  "diff_ratio": 0.5,
+  "positive_diffs": true,
+  "num_models": 8,
+  "num_lstm_layers": 3,
+  "hidden_sizes": [
+    25,
+    25,
+    25
+  ],
+  "has_filterbank": true
+}
