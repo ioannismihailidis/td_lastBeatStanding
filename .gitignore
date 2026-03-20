@@ -1,3 +1,5 @@
 Backup/**
 Miniconda3/**
 *.*.toe
+td_madmom_311/**
+**/__pycache__/**
