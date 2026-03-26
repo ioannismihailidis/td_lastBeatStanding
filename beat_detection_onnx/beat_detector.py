@@ -1,14 +1,16 @@
 """
-Standalone real-time beat detector using ONNX models exported from madmom.
+Standalone real-time beat detector using numpy-only inference.
 
-Dependencies: numpy, onnxruntime
-No madmom dependency at runtime.
+Weights are loaded from .npz files (extracted from ONNX models exported from madmom).
+
+Dependencies: numpy (only)
+No madmom or onnxruntime dependency at runtime.
 """
 
+import io
 import os
 import json
 import numpy as np
-import onnxruntime as ort
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -85,10 +87,8 @@ def build_log_filterbank(num_bands, fmin, fmax, num_fft_bins, sample_rate):
     Fallback if the exported filterbank.npy is not available.
     Note: May not match madmom's filterbank exactly.
     """
-    # FFT bin center frequencies
     fft_freqs = np.linspace(0, sample_rate / 2, num_fft_bins)
 
-    # Logarithmically spaced center frequencies
     log_fmin = np.log2(max(fmin, 1))
     log_fmax = np.log2(fmax)
     center_freqs = 2 ** np.linspace(log_fmin, log_fmax, num_bands + 2)
@@ -99,17 +99,14 @@ def build_log_filterbank(num_bands, fmin, fmax, num_fft_bins, sample_rate):
         f_center = center_freqs[i + 1]
         f_high = center_freqs[i + 2]
 
-        # Rising slope
         mask = (fft_freqs >= f_low) & (fft_freqs <= f_center)
         if f_center > f_low:
             filterbank[mask, i] = (fft_freqs[mask] - f_low) / (f_center - f_low)
 
-        # Falling slope
         mask = (fft_freqs > f_center) & (fft_freqs <= f_high)
         if f_high > f_center:
             filterbank[mask, i] = (f_high - fft_freqs[mask]) / (f_high - f_center)
 
-    # Normalize each filter to sum to 1
     col_sums = filterbank.sum(axis=0, keepdims=True)
     col_sums[col_sums == 0] = 1.0
     filterbank /= col_sums
@@ -118,54 +115,182 @@ def build_log_filterbank(num_bands, fmin, fmax, num_fft_bins, sample_rate):
 
 
 # ─────────────────────────────────────────────────────────────────────
-# ONNX LSTM Ensemble Inference
+# Pure Numpy LSTM Inference
 # ─────────────────────────────────────────────────────────────────────
 
-class LSTMEnsemble:
-    """Manages multiple ONNX LSTM models for ensemble beat detection."""
+def _sigmoid(x):
+    return 1.0 / (1.0 + np.exp(-np.clip(x, -88, 88)))
 
-    def __init__(self, model_dir, num_models=None, single_model=False):
-        onnx_files = sorted([
-            os.path.join(model_dir, f)
-            for f in os.listdir(model_dir)
-            if f.endswith('.onnx') and f.startswith('beat_lstm_')
-        ])
 
-        if not onnx_files:
-            raise FileNotFoundError(f"No ONNX models found in {model_dir}")
+def _tanh(x):
+    return np.tanh(x)
 
-        if single_model:
-            onnx_files = onnx_files[:1]
-        elif num_models is not None:
-            onnx_files = onnx_files[:num_models]
 
-        opts = ort.SessionOptions()
-        opts.inter_op_num_threads = 1
-        opts.intra_op_num_threads = 1
+class NumpyLSTMModel:
+    """Single LSTM model with 3 LSTM layers + dense output, pure numpy.
 
-        self.sessions = []
-        self.states = []
+    Weights are stored in ONNX gate order: i, o, f, c
+    W shape: (1, 4*H, input_size)  — input weights
+    R shape: (1, 4*H, H)           — recurrent weights
+    B shape: (1, 8*H)              — biases (first 4*H input, next 4*H recurrent)
 
-        for path in onnx_files:
-            sess = ort.InferenceSession(path, opts, providers=['CPUExecutionProvider'])
-            self.sessions.append(sess)
-            self.states.append(self._init_states(sess))
+    Args:
+        source: str (file path) or bytes/BytesIO (in-memory npz data)
+    """
 
-        self.num_models = len(self.sessions)
+    def __init__(self, source):
+        if isinstance(source, (bytes, bytearray, memoryview)):
+            source = io.BytesIO(bytes(source))
+        data = np.load(source)
 
-    def _init_states(self, session):
-        """Initialize LSTM states to zeros based on model input shapes."""
-        states = {}
-        for inp in session.get_inputs():
-            if inp.name.startswith('h_') or inp.name.startswith('c_'):
-                shape = [d if isinstance(d, int) else 1 for d in inp.shape]
-                states[inp.name] = np.zeros(shape, dtype=np.float32)
-        return states
+        self.num_layers = 0
+        self.layers = []
+
+        # Load LSTM layers
+        while f'W_{self.num_layers}' in data:
+            i = self.num_layers
+            H = data[f'R_{i}'].shape[2]
+
+            layer = {
+                'W': data[f'W_{i}'][0],       # (4*H, input_size)
+                'R': data[f'R_{i}'][0],        # (4*H, H)
+                'B': data[f'B_{i}'][0],        # (8*H,)
+                'H': H,
+            }
+            self.layers.append(layer)
+            self.num_layers += 1
+
+        # Dense output layer
+        self.dense_W = data['dense_W']   # (H, 1)
+        self.dense_b = data['dense_b']   # (1,)
+
+        # LSTM states: h and c for each layer
+        self.h = [np.zeros(l['H'], dtype=np.float32) for l in self.layers]
+        self.c = [np.zeros(l['H'], dtype=np.float32) for l in self.layers]
+
+        # Load initial states if available
+        for i in range(self.num_layers):
+            key_h = f'h_{i}_init_default'
+            key_c = f'c_{i}_init_default'
+            if key_h in data:
+                self.h[i] = data[key_h].flatten().astype(np.float32).copy()
+            if key_c in data:
+                self.c[i] = data[key_c].flatten().astype(np.float32).copy()
+
+        # Store initial states for reset
+        self._h_init = [h.copy() for h in self.h]
+        self._c_init = [c.copy() for c in self.c]
 
     def reset(self):
-        """Reset all LSTM states to zeros."""
-        for i, sess in enumerate(self.sessions):
-            self.states[i] = self._init_states(sess)
+        for i in range(self.num_layers):
+            self.h[i] = self._h_init[i].copy()
+            self.c[i] = self._c_init[i].copy()
+
+    def process(self, features):
+        """Run features through LSTM layers + dense output.
+
+        Args:
+            features: numpy array (num_frames, num_features)
+
+        Returns:
+            activations: numpy array (num_frames,)
+        """
+        num_frames = features.shape[0]
+        x = features  # (num_frames, input_size)
+
+        # Process through each LSTM layer
+        for li, layer in enumerate(self.layers):
+            W = layer['W']    # (4*H, input_size)
+            R = layer['R']    # (4*H, H)
+            B = layer['B']    # (8*H,)
+            H = layer['H']
+
+            # Split biases: input bias + recurrent bias
+            Wb = B[:4*H]
+            Rb = B[4*H:8*H]
+
+            h = self.h[li]
+            c = self.c[li]
+
+            output = np.zeros((num_frames, H), dtype=np.float32)
+
+            for t in range(num_frames):
+                xt = x[t]
+
+                # gates = W @ xt + R @ h + Wb + Rb
+                # ONNX gate order: i, o, f, c
+                gates = W @ xt + R @ h + Wb + Rb
+
+                i_gate = _sigmoid(gates[0*H:1*H])
+                o_gate = _sigmoid(gates[1*H:2*H])
+                f_gate = _sigmoid(gates[2*H:3*H])
+                c_gate = _tanh(gates[3*H:4*H])
+
+                c = f_gate * c + i_gate * c_gate
+                h = o_gate * _tanh(c)
+
+                output[t] = h
+
+            self.h[li] = h
+            self.c[li] = c
+            x = output  # feed to next layer
+
+        # Dense + sigmoid
+        logits = x @ self.dense_W + self.dense_b  # (num_frames, 1)
+        activations = _sigmoid(logits.flatten())
+
+        return activations
+
+
+class LSTMEnsemble:
+    """Manages multiple numpy LSTM models for ensemble beat detection.
+
+    Args:
+        model_dir: str path to directory with beat_lstm_*.npz files, OR
+                   None if model_files is provided.
+        model_files: dict mapping filenames to bytes/BytesIO (e.g. from VFS).
+                     Keys should be like 'beat_lstm_1.npz', etc.
+        num_models: Limit to first N models.
+        single_model: Use only 1 model (fastest).
+    """
+
+    def __init__(self, model_dir=None, model_files=None,
+                 num_models=None, single_model=False):
+        if model_files is not None:
+            # Load from in-memory data (VFS, etc.)
+            npz_keys = sorted([
+                k for k in model_files
+                if k.endswith('.npz') and k.startswith('beat_lstm_')
+            ])
+            if not npz_keys:
+                raise FileNotFoundError("No beat_lstm_*.npz entries in model_files")
+            if single_model:
+                npz_keys = npz_keys[:1]
+            elif num_models is not None:
+                npz_keys = npz_keys[:num_models]
+            sources = [model_files[k] for k in npz_keys]
+        else:
+            # Load from filesystem
+            npz_files = sorted([
+                os.path.join(model_dir, f)
+                for f in os.listdir(model_dir)
+                if f.endswith('.npz') and f.startswith('beat_lstm_')
+            ])
+            if not npz_files:
+                raise FileNotFoundError(
+                    f"No .npz model weights found in {model_dir}")
+            if single_model:
+                npz_files = npz_files[:1]
+            elif num_models is not None:
+                npz_files = npz_files[:num_models]
+            sources = npz_files
+
+        self.models = [NumpyLSTMModel(s) for s in sources]
+        self.num_models = len(self.models)
+
+    def reset(self):
+        for model in self.models:
+            model.reset()
 
     def process(self, features):
         """Run features through all models and average activations.
@@ -176,32 +301,8 @@ class LSTMEnsemble:
         Returns:
             activations: numpy array (num_frames,) — beat activation [0, 1]
         """
-        # ONNX LSTM expects (seq_len, batch=1, features)
-        x = features.reshape(features.shape[0], 1, features.shape[1]).astype(np.float32)
-
-        all_activations = []
-
-        for sess, state in zip(self.sessions, self.states):
-            inputs = {'features': x}
-            inputs.update(state)
-
-            output_names = [o.name for o in sess.get_outputs()]
-            outputs = sess.run(output_names, inputs)
-
-            # First output is activation, rest are states
-            activation = outputs[0]
-            all_activations.append(activation)
-
-            # Update states for next call
-            for j, name in enumerate(output_names[1:], 1):
-                # Map output state name to input state name
-                # Output: h_0_out → Input: h_0_in
-                input_name = name.replace('_out', '_in')
-                if input_name in state:
-                    state[input_name] = outputs[j]
-
-        # Average ensemble predictions
-        return np.mean(all_activations, axis=0).flatten()
+        all_activations = [m.process(features) for m in self.models]
+        return np.mean(all_activations, axis=0)
 
 
 # ─────────────────────────────────────────────────────────────────────
@@ -231,12 +332,11 @@ class DBNBeatTracker:
         self.num_tempos = len(intervals)
 
         # State arrays
-        positions = []     # normalized position [0, 1) within beat period
-        state_intervals = []  # beat interval for each state
+        positions = []
+        state_intervals = []
 
-        # Index maps
-        self.beat_state_indices = []  # state index of phase=0 for each tempo
-        self.boundary_indices = []     # state index of last phase for each tempo
+        self.beat_state_indices = []
+        self.boundary_indices = []
         state_offset = 0
 
         for iv in intervals:
@@ -254,24 +354,21 @@ class DBNBeatTracker:
         self.beat_state_indices = np.array(self.beat_state_indices, dtype=np.int32)
         self.boundary_indices = np.array(self.boundary_indices, dtype=np.int32)
 
-        # Observation model: pointers (1 = beat state, 0 = non-beat)
+        # Observation model
         border = 1.0 / observation_lambda
         self.pointers = (self.positions < border).astype(np.int32)
 
         # Precompute transition structures
         self._build_transitions()
 
-        # Forward state (log probabilities for numerical stability)
+        # Forward state (log probabilities)
         self.fwd = np.zeros(self.num_states, dtype=np.float64)
-        self.fwd[:] = -np.log(self.num_states)  # uniform prior in log space
+        self.fwd[:] = -np.log(self.num_states)
 
-        # Track beats for interval estimation
         self._frame_counter = 0
         self._last_beat_frame = -1
 
     def _build_transitions(self):
-        """Precompute transition indices and probabilities."""
-        # Phase advance: non-boundary states → next state
         boundary_set = set(self.boundary_indices.tolist())
 
         self.advance_from = np.array(
@@ -280,25 +377,20 @@ class DBNBeatTracker:
         )
         self.advance_to = self.advance_from + 1
 
-        # Beat boundary transitions (vectorized)
-        # Probability ∝ exp(-λ * |target_interval / source_interval - 1|)
-        src_ivs = self.unique_intervals.astype(np.float64)[:, None]  # (T, 1)
-        tgt_ivs = self.unique_intervals.astype(np.float64)[None, :]  # (1, T)
-        ratios = tgt_ivs / src_ivs  # (T, T)
+        src_ivs = self.unique_intervals.astype(np.float64)[:, None]
+        tgt_ivs = self.unique_intervals.astype(np.float64)[None, :]
+        ratios = tgt_ivs / src_ivs
         self.boundary_trans_probs = np.exp(
             -self.transition_lambda * np.abs(ratios - 1.0)
         )
-        # Normalize rows
         row_sums = self.boundary_trans_probs.sum(axis=1, keepdims=True)
         row_sums[row_sums == 0] = 1.0
         self.boundary_trans_probs /= row_sums
 
-        # Precompute log transition probs for the forward algorithm
         with np.errstate(divide='ignore'):
-            self.log_boundary_trans = np.log(self.boundary_trans_probs)  # (T, T)
+            self.log_boundary_trans = np.log(self.boundary_trans_probs)
 
     def reset(self):
-        """Reset the tracker state."""
         self.fwd[:] = -np.log(self.num_states)
         self._frame_counter = 0
         self._last_beat_frame = -1
@@ -314,40 +406,32 @@ class DBNBeatTracker:
         """
         activation = float(np.clip(activation, 1e-7, 1.0 - 1e-7))
 
-        # --- Observation log-likelihoods ---
         obs_lambda = self.observation_lambda
         log_beat = np.log(activation)
         log_no_beat = np.log((1.0 - activation) / max(obs_lambda - 1, 1))
 
         log_obs = np.where(self.pointers == 1, log_beat, log_no_beat)
 
-        # --- Transition (vectorized, in log space) ---
         new_fwd = np.full(self.num_states, -np.inf, dtype=np.float64)
 
-        # Phase advance (non-boundary states): simple index shift
+        # Phase advance
         new_fwd[self.advance_to] = self.fwd[self.advance_from]
 
-        # Beat boundary transitions (fully vectorized)
-        # src_probs: log-prob of each boundary state, shape (T,)
-        src_probs = self.fwd[self.boundary_indices]  # (T,)
+        # Beat boundary transitions
+        src_probs = self.fwd[self.boundary_indices]
+        contrib = src_probs[:, None] + self.log_boundary_trans
 
-        # contrib[i, j] = src_probs[i] + log_trans[i, j] → (T, T)
-        contrib = src_probs[:, None] + self.log_boundary_trans  # (T, T)
-
-        # For each target tempo j, log-sum-exp over all source tempos i
-        max_contrib = contrib.max(axis=0)  # (T,)
-        # Avoid -inf issues
+        max_contrib = contrib.max(axis=0)
         valid = max_contrib > -np.inf
         beat_fwd = np.full(self.num_tempos, -np.inf, dtype=np.float64)
         if valid.any():
             safe = contrib[:, valid] - max_contrib[valid]
             beat_fwd[valid] = max_contrib[valid] + np.log(np.exp(safe).sum(axis=0))
 
-        # Merge beat transitions with phase-advance results via log-sum-exp
-        beat_targets = self.beat_state_indices  # (T,)
+        # Merge
+        beat_targets = self.beat_state_indices
         existing = new_fwd[beat_targets]
-        # Combine existing (from phase advance into beat states) with boundary transitions
-        stacked = np.stack([existing, beat_fwd])  # (2, T)
+        stacked = np.stack([existing, beat_fwd])
         max_stack = stacked.max(axis=0)
         valid2 = max_stack > -np.inf
         if valid2.any():
@@ -359,7 +443,7 @@ class DBNBeatTracker:
         # Apply observation
         new_fwd += log_obs
 
-        # Normalize (log space)
+        # Normalize
         max_fwd = new_fwd.max()
         if max_fwd > -np.inf:
             log_sum = max_fwd + np.log(np.exp(new_fwd - max_fwd).sum())
@@ -368,7 +452,7 @@ class DBNBeatTracker:
         self.fwd = new_fwd
         self._frame_counter += 1
 
-        # --- Beat detection ---
+        # Beat detection
         best_state = np.argmax(self.fwd)
         is_beat = bool(self.pointers[best_state] == 1)
 
@@ -383,52 +467,66 @@ class DBNBeatTracker:
 # ─────────────────────────────────────────────────────────────────────
 
 class BeatDetector:
-    """Real-time beat detector using ONNX models.
+    """Real-time beat detector using pure numpy inference.
 
     Combines audio preprocessing, LSTM neural network inference,
     and Dynamic Bayesian Network beat tracking.
 
-    Usage:
-        detector = BeatDetector('path/to/models/')
-        result = detector.process(audio_chunk, sample_rate=44100)
-        if result['beat']:
-            print(f"Beat! BPM: {result['bpm']}")
+    Usage (filesystem):
+        detector = BeatDetector(model_dir='path/to/models/')
+
+    Usage (TouchDesigner VFS):
+        vfs_files = {f.name: bytes(f.byteArray) for f in me.parent().vfs}
+        detector = BeatDetector(model_files=vfs_files)
     """
 
-    # Number of beat intervals to keep for BPM estimation
     BPM_HISTORY = 8
-    # Minimum frames to accumulate before running DBN
     MIN_DBN_FRAMES = 4
-    # Target sample rate (must match model training)
     TARGET_SR = 44100
-    # Frames per second (must match model training)
     FPS = 100
 
-    def __init__(self, model_dir, min_bpm=60, max_bpm=190,
+    def __init__(self, model_dir=None, model_files=None,
+                 min_bpm=60, max_bpm=190,
                  transition_lambda=100, observation_lambda=16,
                  act_gate=0.15, rms_gate=0.005, single_model=True):
         """
         Args:
-            model_dir: Path to directory with exported ONNX models and config
-            min_bpm: Minimum expected BPM
-            max_bpm: Maximum expected BPM
-            transition_lambda: DBN tempo transition smoothness (higher = more stable)
-            observation_lambda: DBN observation sensitivity
-            act_gate: Minimum activation to accept a beat
-            rms_gate: Minimum RMS energy to accept a beat
-            single_model: Use only 1 LSTM model (faster) vs full ensemble
+            model_dir: Path to directory with model files (filesystem).
+            model_files: Dict mapping filenames to bytes (in-memory / VFS).
+                         Expected keys: 'config.json', 'filterbank.npy',
+                         'beat_lstm_1.npz', etc.
+                         Provide either model_dir or model_files, not both.
         """
-        # Load config
-        config_path = os.path.join(model_dir, 'config.json')
-        with open(config_path, 'r') as f:
-            self.config = json.load(f)
+        if model_dir is None and model_files is None:
+            raise ValueError("Provide either model_dir or model_files")
 
-        # Load filterbank
-        fb_path = os.path.join(model_dir, 'filterbank.npy')
-        if os.path.exists(fb_path):
-            filterbank = np.load(fb_path)
+        # --- Load config ---
+        if model_files is not None and 'config.json' in model_files:
+            raw = model_files['config.json']
+            if isinstance(raw, (bytes, bytearray, memoryview)):
+                raw = bytes(raw).decode('utf-8')
+            self.config = json.loads(raw)
         else:
-            # Fallback: build filterbank from config
+            config_path = os.path.join(model_dir, 'config.json')
+            with open(config_path, 'r') as f:
+                self.config = json.load(f)
+
+        # --- Load filterbank ---
+        if model_files is not None and 'filterbank.npy' in model_files:
+            fb_data = model_files['filterbank.npy']
+            if isinstance(fb_data, (bytes, bytearray, memoryview)):
+                fb_data = io.BytesIO(bytes(fb_data))
+            filterbank = np.load(fb_data)
+        elif model_dir is not None:
+            fb_path = os.path.join(model_dir, 'filterbank.npy')
+            if os.path.exists(fb_path):
+                filterbank = np.load(fb_path)
+            else:
+                filterbank = None
+        else:
+            filterbank = None
+
+        if filterbank is None:
             num_fft_bins = self.config['frame_size'] // 2 + 1
             filterbank = build_log_filterbank(
                 num_bands=self.config['num_filter_bands'],
@@ -449,6 +547,7 @@ class BeatDetector:
 
         self._ensemble = LSTMEnsemble(
             model_dir=model_dir,
+            model_files=model_files,
             single_model=single_model,
         )
 
@@ -530,9 +629,6 @@ class BeatDetector:
         # Accumulate in frame-aligned buffer
         self._audio_buf = np.concatenate([self._audio_buf, audio])
 
-        # Calculate how many full frames we can extract
-        # Need at least frame_size samples for the first frame,
-        # then hop_size for each additional frame
         available = len(self._audio_buf)
         if available < self._frame_size:
             return self._make_result(beat=False, confidence=0.0)
@@ -547,16 +643,14 @@ class BeatDetector:
             start = i * self._hop_size
             frames[i] = self._audio_buf[start:start + self._frame_size]
 
-        # Advance buffer (keep unprocessed samples)
-        consumed = (n_frames - 1) * self._hop_size + self._frame_size
-        # Actually, for streaming we consume hop_size * n_frames samples
+        # Advance buffer
         consumed = n_frames * self._hop_size
         self._audio_buf = self._audio_buf[consumed:]
 
         # Preprocess: frames → features
         features = self._prep.process_frames(frames)
 
-        # RNN inference: features → activations
+        # LSTM inference: features → activations
         activations = self._ensemble.process(features)
 
         if activations.size == 0:
@@ -564,8 +658,7 @@ class BeatDetector:
 
         # Confidence + RMS gating
         peak_act = float(activations.max())
-        rms_input = audio[-len(audio):] if len(audio) > 0 else audio
-        rms = float(np.sqrt(np.mean(rms_input ** 2))) if len(rms_input) > 0 else 0.0
+        rms = float(np.sqrt(np.mean(audio ** 2))) if len(audio) > 0 else 0.0
         gated = rms < self.rms_gate or peak_act < self.act_gate
 
         # Buffer activations for DBN
@@ -586,7 +679,6 @@ class BeatDetector:
             for act in batched_acts:
                 is_beat = self._dbn.process_frame(float(act))
                 if is_beat:
-                    # Deduplicate
                     frame_t = current_t
                     if frame_t > self._last_beat_t:
                         self._last_beat_t = frame_t
@@ -600,14 +692,12 @@ class BeatDetector:
                         self._prev_beat_t = frame_t
                         beat_detected = True
         else:
-            # Still run DBN to keep it in sync, but don't emit beats
             for act in batched_acts:
                 self._dbn.process_frame(float(act))
 
         return self._make_result(beat=beat_detected, confidence=peak_act)
 
     def _update_bpm(self, interval):
-        """Update BPM estimate from beat interval."""
         inst_bpm = 60.0 / interval
         if inst_bpm < self.min_bpm or inst_bpm > self.max_bpm:
             return
@@ -621,7 +711,6 @@ class BeatDetector:
         self._bpm = round(60.0 / median_iv, 2)
 
     def _make_result(self, beat, confidence):
-        """Build result dictionary."""
         phase = 0.0
         if self._bpm > 0 and self._prev_beat_t > 0:
             current_t = self._sample_count / float(self._sr)

@@ -1,13 +1,13 @@
 """
-beat_detection_onnx — Standalone real-time beat detection using ONNX models.
+beat_detection_onnx — Standalone real-time beat detection (numpy only).
 
-Export models once from madmom, then run with only numpy + onnxruntime.
+Model weights exported from madmom LSTM models. At runtime, only numpy is needed.
 
 Quick start:
     # 1. Export (once, needs madmom + onnx):
     python -m beat_detection_onnx.export_models
 
-    # 2. Use (only needs numpy + onnxruntime):
+    # 2. Use (only needs numpy):
     from beat_detection_onnx import BeatDetector, PostProcessor
 
     detector = BeatDetector('beat_detection_onnx/models/')
@@ -17,10 +17,7 @@ Quick start:
     result = post.process(result, dt=1/60, audio=audio_chunk)
 """
 
-try:
-    from .beat_detector import BeatDetector
-    from .post_processor import PostProcessor
-    __all__ = ['BeatDetector', 'PostProcessor']
-except ImportError:
-    # onnxruntime not available — export_models.py can still run
-    __all__ = []
+from .beat_detector import BeatDetector
+from .post_processor import PostProcessor
+
+__all__ = ['BeatDetector', 'PostProcessor']

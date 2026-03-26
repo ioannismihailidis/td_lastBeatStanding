@@ -1,8 +1,0 @@
-active: true
-mode: Python vEnv
-envName: td_madmom_311
-installPath: .
-pythonVersion: 3.11.14
-autoSetup: true
-autoSetupReqs: []
-extraPaths: []

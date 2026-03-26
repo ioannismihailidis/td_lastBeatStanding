@@ -10,7 +10,7 @@ Usage:
        python -m beat_detection_onnx.example path/to/audio.wav
 
 Requirements:
-    pip install numpy onnxruntime soundfile
+    pip install numpy soundfile
 """
 
 import sys
