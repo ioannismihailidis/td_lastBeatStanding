@@ -1,61 +1,99 @@
 # last beat standing - a realtime beat detector
 
-Real-time beat tracking component for TouchDesigner using madmom's RNN + DBN neural network processors.
+Real-time beat tracking component for TouchDesigner using LSTM neural networks and a Dynamic Bayesian Network beat tracker. Pure numpy — no external dependencies required.
 
 ## Overview
 
-**lastBeatStanding** is a self-contained TouchDesigner component (`.tox`) that provides robust, real-time beat detection from a live audio stream.
+**lastBeatStanding** is a self-contained TouchDesigner component (`.tox`) that provides robust, real-time beat detection from a live audio stream. The neural network weights are embedded in the tox's Virtual File System, so it works out of the box with stock TouchDesigner — no conda, no pip, no external packages.
 
 ## Requirements
 
 - TouchDesigner 2025.32280+
-- Windows 11 (not tested under MacOS)
+- Windows 11 (not tested under macOS)
 
-## Installation
+## Quick Start
 
-1. Open `td_lastBeatStanding_example.toe` in TouchDesigner. On first launch, Miniconda and all Python dependencies (including `madmom`) are automatically downloaded and installed via [tdPyEnvManager](https://derivative.ca/community-post/introducing-touchdesigner-python-environment-manager-tdpyenvmanager/72024). This happens during the TouchDesigner splash screen and may take a while.
-2. Once the network is visible, you should see a running beat detection process.
+1. Drag `td_lastBeatStanding.tox` into your TouchDesigner project.
+2. Connect an audio CHOP (e.g. Audio Device In, Audio File In) to the component's input.
+3. The component outputs a single CHOP with `beat`, `bpm`, `phase`, `breakdown`, and other channels.
+
+That's it — no installation, no environment setup.
+
+To try the included example, open `td_lastBeatStanding_example.toe`.
+
 <img width="1891" height="837" alt="image" src="https://github.com/user-attachments/assets/5824eec5-4d71-45ab-8710-2b183fa621e2" />
 
+## How It Works
 
-## Usage
+The beat detector runs a three-stage pipeline entirely in Python/numpy:
 
-The project folder now contains all necessary dependencies. To use the beat detection in any other project on your system, drag `td_lastBeatStanding.tox` into your project and make sure **Enable External Tox** is enabled.
+1. **Preprocessing** — Audio is framed, windowed, FFT'd, and passed through a logarithmic filterbank to produce spectral features at 100 FPS.
+2. **LSTM Inference** — Features are fed through pre-trained LSTM neural networks (exported from [madmom](https://github.com/CPJKU/madmom)) to produce beat activation values.
+3. **DBN Beat Tracking** — A Dynamic Bayesian Network tracks tempo and phase over time, producing stable beat positions even through noisy activations.
 
-Connect an audio CHOP (e.g. Audio Device In, Audio File In) to the component's input. The component outputs a single CHOP with beat, bpm, phase, breakdown, and other channels that you can use to drive visuals, lighting, or any other downstream logic.
+Post-processing adds synthetic beat continuation, time multiplier, bar counting, and breakdown detection.
 
-For breakdown detection, the original audio is also routed internally to the post-processing stage for bass energy analysis.
-
-## Signal Flow (internal)
+## Architecture
 
 ```
-Audio In --> [script_madmom_dnn] --> [script_madmom_post] --> Output
-                                          ^
-                          Audio In --------+
-                       (input 1: bass analysis)
+Audio In --> [Preprocessing] --> [LSTM Ensemble] --> [DBN Tracker] --> [Post Processing] --> Output
+                                                                             ^
+                                                             Audio In -------+
+                                                          (bass energy analysis)
 ```
+
+### Model files
+
+The LSTM weights are stored as `.npz` files (numpy archives). They can be loaded from:
+
+- **TouchDesigner VFS** (preferred) — embedded in the `.tox`, fully self-contained
+- **Filesystem** — from the `beat_detection_onnx/models/` directory as a fallback
+
+The TD script auto-detects VFS first, then falls back to the filesystem.
+
+## Standalone Python Usage
+
+The beat detection library works independently of TouchDesigner:
+
+```python
+from beat_detection_onnx import BeatDetector, PostProcessor
+
+detector = BeatDetector(model_dir='beat_detection_onnx/models/', single_model=True)
+post = PostProcessor()
+
+# Feed audio chunks (e.g. from a microphone or file)
+result = detector.process(audio_chunk, sample_rate=44100)
+result = post.process(result, dt=1/60, audio=audio_chunk)
+
+if result['beat']:
+    print(f"Beat! BPM: {result['bpm']}")
+```
+
+**Dependencies**: numpy only.
+
+Run the included example:
+
+```bash
+pip install numpy soundfile
+python -m beat_detection_onnx.example Assets/cyba_-_yellow.mp3
+```
+
+## Re-exporting Models
+
+The `.npz` weight files are already included. If you need to re-export from madmom (e.g. for different models), run the export script in an environment with madmom and onnx installed:
+
+```bash
+pip install madmom onnx numpy
+python -m beat_detection_onnx.export_models
+```
+
+This only needs to be done once. The exported weights are then used at runtime without madmom.
 
 ## Component Parameters
 
 All parameters are promoted to the parent component. Adjusting them on the COMP controls the internal Script CHOPs via parameter binding.
 
-### script_madmom_dnn
-
-Performs real-time beat detection by feeding audio through madmom's `RNNBeatProcessor` (online mode) and `DBNBeatTrackingProcessor` (online mode). Audio is frame-aligned to the RNN's expected hop size (441 samples at 100 FPS). Activations are batched before being sent to the DBN. BPM is calculated from the median of recent beat intervals.
-
-The processor auto-reinitializes when detection parameters change.
-
-#### Output Channels
-
-| Channel         | Description                                      |
-|-----------------|--------------------------------------------------|
-| `beat`          | 1.0 on beat frame, 0.0 otherwise                |
-| `bpm`           | Current BPM (median of recent intervals)         |
-| `beat_interval` | Time in seconds between last two beats           |
-| `confidence`    | Peak RNN activation value (0.0 - 1.0)           |
-| `phase`         | Position within current beat cycle (0.0 - 1.0)  |
-
-#### Parameters (Beat Detection)
+### Beat Detection
 
 | Parameter            | Type    | Default | Range     | Description                                                                 |
 |----------------------|---------|---------|-----------|-----------------------------------------------------------------------------|
@@ -65,51 +103,33 @@ The processor auto-reinitializes when detection parameters change.
 | Max BPM              | Int     | 190     | 60 - 300  | Upper BPM limit for the DBN beat tracker.                                   |
 | Transition Lambda    | Int     | 100     | 1 - 300   | DBN tempo transition smoothness. Higher = more stable tempo.                |
 | Observation Lambda   | Int     | 16      | 1 - 64    | DBN observation weight. Higher = stronger trust in RNN activations.         |
-| Single LSTM Model    | Toggle  | On      | --        | Use only the first LSTM model (faster) instead of the full ensemble.        |
+| Single LSTM Model    | Toggle  | On      | --        | Use only the first LSTM model (faster) instead of the full 8-model ensemble.|
 | Reset                | Pulse   | --      | --        | Reset all beat detection state and the DBN processor.                       |
 
----
-
-### script_madmom_post
-
-Post-processes the DNN beat output to provide synthetic beat continuation during silence, half/double time multiplier, a beat counter (bar position), and bass energy-based breakdown detection.
-
-Synthetic beats are generated using the last known BPM when the DNN stops detecting beats (e.g. during a breakdown or quiet section). A debounce guard prevents double-triggering from the DNN.
-
-Bass energy is measured at each beat (real and synthetic) from a rolling audio buffer using a block-averaging low-pass filter (~150 Hz cutoff) with exponential smoothing.
-
-#### Inputs
-
-| Input | Description                                          |
-|-------|------------------------------------------------------|
-| 0     | Output of script_madmom_dnn (beat, bpm, confidence)  |
-| 1     | Original audio samples (for bass energy analysis)    |
-
-#### Output Channels
-
-| Channel         | Description                                                      |
-|-----------------|------------------------------------------------------------------|
-| `beat`          | 1.0 on any beat (real or synthetic), 0.0 otherwise              |
-| `bpm`           | BPM after time multiplier is applied                             |
-| `beat_interval` | Effective beat interval in seconds (after time multiplier)       |
-| `confidence`    | Passthrough of DNN confidence                                    |
-| `phase`         | Position within current beat cycle (0.0 - 1.0)                  |
-| `synth`         | 1.0 only when the beat is synthetic, 0.0 for real DNN beats     |
-| `beat_num`      | Current beat position within the bar (1 to Beats Per Bar)        |
-| `breakdown`     | 1.0 when bass energy is below threshold (breakdown detected)    |
-| `bass_energy`   | Smoothed bass energy level                                       |
-
-#### Parameters (Post Processing)
+### Post Processing
 
 | Parameter        | Type   | Default | Range      | Description                                                                  |
 |------------------|--------|---------|------------|------------------------------------------------------------------------------|
 | Time Multiplier  | Menu   | 1x     | 0.5x / 1x / 2x / 4x | Scales the detected BPM. 0.5x = half time, 2x = double time.       |
 | Beats Per Bar    | Int    | 4       | 1 - 16    | Number of beats per bar for the beat counter.                                |
 | Reset Tact       | Pulse  | --      | --         | Reset the beat counter to 0.                                                 |
-| Max Synth Beats  | Int    | 16      | 0 - 128   | Maximum synthetic beats to generate before stopping. 0 = unlimited.          |
+| Max Synth Beats  | Int    | 16      | 0 - 128   | Maximum synthetic beats before stopping. 0 = unlimited.                      |
 | Bass Threshold   | Float  | 0.005   | 0.0 - 0.1 | Bass energy level below which a breakdown is detected.                       |
 | Bass Smoothing   | Float  | 0.15    | 0.01 - 1.0 | Exponential smoothing factor for bass energy. Lower = slower response.      |
 
+### Output Channels
+
+| Channel         | Description                                                      |
+|-----------------|------------------------------------------------------------------|
+| `beat`          | 1.0 on any beat (real or synthetic), 0.0 otherwise              |
+| `bpm`           | BPM after time multiplier is applied                             |
+| `beat_interval` | Effective beat interval in seconds (after time multiplier)       |
+| `confidence`    | Peak LSTM activation value (0.0 - 1.0)                          |
+| `phase`         | Position within current beat cycle (0.0 - 1.0)                  |
+| `synth`         | 1.0 when the beat is synthetic, 0.0 for real beats              |
+| `beat_num`      | Current beat position within the bar (1 to Beats Per Bar)        |
+| `breakdown`     | 1.0 when bass energy is below threshold (breakdown detected)    |
+| `bass_energy`   | Smoothed bass energy level                                       |
 
 ## Demo
 
@@ -117,4 +137,6 @@ Demo track: [cyba - Nostalgia](https://ccmixter.org/files/cyba/60166) from ccMix
 
 ## License
 
-This project is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html). See [LICENSE](LICENSE) for details.
+This project's source code is licensed under the BSD 2-Clause license.
+
+The pre-trained model weights (`beat_detection_onnx/models/*.npz`) are derived from [madmom](https://github.com/CPJKU/madmom) and licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Commercial use of the model weights requires permission from the original authors — see [LICENSE](LICENSE) for details.
