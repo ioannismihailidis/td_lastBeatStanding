@@ -1,3 +1,4 @@
 Backup/**
 *.*.toe
-beat_detection/__pycache__/**
+**/__pycache__/**
+.claude/
