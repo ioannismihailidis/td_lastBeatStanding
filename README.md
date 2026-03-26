@@ -137,6 +137,6 @@ Demo track: [cyba - Nostalgia](https://ccmixter.org/files/cyba/60166) from ccMix
 
 ## License
 
-This project's source code is licensed under the BSD 2-Clause license.
+This project's source code is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html).
 
 The pre-trained model weights (`beat_detection_onnx/models/*.npz`) are derived from [madmom](https://github.com/CPJKU/madmom) and licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Commercial use of the model weights requires permission from the original authors — see [LICENSE](LICENSE) for details.
