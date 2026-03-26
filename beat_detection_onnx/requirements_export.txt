@@ -1,0 +1,4 @@
+# Export dependencies (one-time, to convert madmom models to ONNX)
+numpy>=1.24
+onnx>=1.14
+madmom @ git+https://github.com/CPJKU/madmom.git

@@ -4,7 +4,8 @@
 # Web:    https://www.studiofarbraum.com
 # GitHub: https://github.com/ioannismihailidis
 #
-# Real-time beat detection using ONNX LSTM models (exported from madmom)
+# Real-time beat detection using pure numpy LSTM inference (weights from madmom)
+# Supports loading model weights from the tox VFS or from the filesystem.
 
 import os, sys
 
@@ -12,14 +13,6 @@ import os, sys
 # Resolve paths relative to the tox (parent COMP), falling back to project.folder
 _tox_par = me.parent().par.externaltox.eval() if me.parent() else ''
 _TOX_DIR = os.path.dirname(tdu.expandPath(_tox_par)) if _tox_par else project.folder
-
-# Add conda env site-packages (for numpy, onnxruntime)
-CONDA_ENV = os.path.join(_TOX_DIR, "Miniconda3", "envs", "td_madmom_311")
-_site_packages = os.path.join(CONDA_ENV, "Lib", "site-packages")
-if os.path.isdir(_site_packages) and _site_packages not in sys.path:
-	os.add_dll_directory(os.path.join(CONDA_ENV, "Library", "bin"))
-	os.add_dll_directory(os.path.join(CONDA_ENV, "DLLs"))
-	sys.path.insert(0, _site_packages)
 
 # Add project folder so beat_detection_onnx package can be imported
 if _TOX_DIR not in sys.path:
@@ -29,7 +22,7 @@ if _TOX_DIR not in sys.path:
 import numpy as np
 from beat_detection_onnx import BeatDetector
 
-# Path to exported ONNX models
+# Filesystem fallback path
 _MODEL_DIR = os.path.join(_TOX_DIR, "beat_detection_onnx", "models")
 
 _state = {
@@ -38,17 +31,48 @@ _state = {
 }
 
 
+def _load_vfs_files():
+	"""Try to load model files from the parent COMP's VFS.
+	Returns a dict {filename: bytes} or None if VFS is empty/unavailable.
+	"""
+	try:
+		vfs = me.parent().vfs
+		files = {}
+		for item in vfs:
+			files[item.name] = bytes(item.byteArray)
+		if 'config.json' in files:
+			return files
+	except:
+		pass
+	return None
+
+
 def _init(min_bpm, max_bpm, trans_lambda, obs_lambda, single_model, act_gate, rms_gate):
-	_state["detector"] = BeatDetector(
-		model_dir=_MODEL_DIR,
-		min_bpm=min_bpm,
-		max_bpm=max_bpm,
-		transition_lambda=trans_lambda,
-		observation_lambda=obs_lambda,
-		act_gate=act_gate,
-		rms_gate=rms_gate,
-		single_model=single_model,
-	)
+	# Try VFS first, fall back to filesystem
+	vfs_files = _load_vfs_files()
+
+	if vfs_files is not None:
+		_state["detector"] = BeatDetector(
+			model_files=vfs_files,
+			min_bpm=min_bpm,
+			max_bpm=max_bpm,
+			transition_lambda=trans_lambda,
+			observation_lambda=obs_lambda,
+			act_gate=act_gate,
+			rms_gate=rms_gate,
+			single_model=single_model,
+		)
+	else:
+		_state["detector"] = BeatDetector(
+			model_dir=_MODEL_DIR,
+			min_bpm=min_bpm,
+			max_bpm=max_bpm,
+			transition_lambda=trans_lambda,
+			observation_lambda=obs_lambda,
+			act_gate=act_gate,
+			rms_gate=rms_gate,
+			single_model=single_model,
+		)
 	_state["_params"] = (min_bpm, max_bpm, trans_lambda, obs_lambda, single_model)
 
 

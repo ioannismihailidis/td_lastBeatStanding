@@ -1,2 +1,3 @@
 Backup/**
 *.*.toe
+beat_detection_onnx/__pycache__/**

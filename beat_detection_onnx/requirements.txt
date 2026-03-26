@@ -1,0 +1,2 @@
+# Runtime dependencies (inference only)
+onnxruntime>=1.16
