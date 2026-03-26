@@ -24,7 +24,7 @@ if _TOX_DIR not in sys.path:
 # ------------------------------
 
 import numpy as np
-from beat_detection_onnx import PostProcessor
+from beat_detection import PostProcessor
 
 _post_proc = PostProcessor()
 

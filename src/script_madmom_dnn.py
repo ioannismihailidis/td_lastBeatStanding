@@ -14,16 +14,16 @@ import os, sys
 _tox_par = me.parent().par.externaltox.eval() if me.parent() else ''
 _TOX_DIR = os.path.dirname(tdu.expandPath(_tox_par)) if _tox_par else project.folder
 
-# Add project folder so beat_detection_onnx package can be imported
+# Add project folder so beat_detection package can be imported
 if _TOX_DIR not in sys.path:
 	sys.path.insert(0, _TOX_DIR)
 # ------------------------------
 
 import numpy as np
-from beat_detection_onnx import BeatDetector
+from beat_detection import BeatDetector
 
 # Filesystem fallback path
-_MODEL_DIR = os.path.join(_TOX_DIR, "beat_detection_onnx", "models")
+_MODEL_DIR = os.path.join(_TOX_DIR, "beat_detection", "models")
 
 _state = {
 	"detector": None,

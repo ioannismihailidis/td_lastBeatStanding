@@ -4,10 +4,10 @@ Example: Real-time beat detection from an audio file.
 
 Usage:
     1. First, export models (once):
-       python -m beat_detection_onnx.export_models
+       python -m beat_detection.export_models
 
     2. Run this example:
-       python -m beat_detection_onnx.example path/to/audio.wav
+       python -m beat_detection.example path/to/audio.wav
 
 Requirements:
     pip install numpy soundfile
@@ -21,7 +21,7 @@ import numpy as np
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python -m beat_detection_onnx.example <audio_file>")
+        print("Usage: python -m beat_detection.example <audio_file>")
         print("\nSupported formats: WAV, FLAC, OGG (requires soundfile)")
         sys.exit(1)
 
@@ -30,7 +30,7 @@ def main():
 
     if not os.path.exists(os.path.join(model_dir, 'config.json')):
         print("ERROR: Models not found. Run export first:")
-        print("  python -m beat_detection_onnx.export_models")
+        print("  python -m beat_detection.export_models")
         sys.exit(1)
 
     # Load audio
@@ -51,7 +51,7 @@ def main():
     print()
 
     # Initialize detector
-    from beat_detection_onnx import BeatDetector, PostProcessor
+    from beat_detection import BeatDetector, PostProcessor
 
     detector = BeatDetector(
         model_dir,

@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Miniconda3/envs/td_madmom_311/python.exe -c \"import madmom; print\\(''madmom OK''\\); import numpy; print\\(''numpy OK''\\)\")",
+      "Bash(\"./Miniconda3/envs/td_madmom_311/python.exe\" -c \"import madmom; print\\(''madmom OK''\\); import numpy; print\\(''numpy OK''\\)\")",
+      "Bash(\"c:/Users/janni/Desktop/td_lastBeatStanding2/Miniconda3/envs/td_madmom_311/python.exe\" -c \"print\\(''hello''\\)\")",
+      "Bash(\"c:/Users/janni/Desktop/td_lastBeatStanding2/Miniconda3/envs/td_madmom_311/python.exe\" -c \"import madmom; print\\(''madmom OK''\\); from madmom.models import BEATS_LSTM; print\\(f''Models: {len\\(BEATS_LSTM\\)}''\\)\")",
+      "Bash(cmd.exe /c \"c:\\\\Users\\\\janni\\\\Desktop\\\\td_lastBeatStanding2\\\\Miniconda3\\\\envs\\\\td_madmom_311\\\\python.exe -c \"\"import madmom; print\\(''madmom OK''\\)\"\"\")",
+      "Bash(PYTHONHOME=\"c:/Users/janni/Desktop/td_lastBeatStanding2/Miniconda3/envs/td_madmom_311\" \"c:/Users/janni/Desktop/td_lastBeatStanding2/Miniconda3/envs/td_madmom_311/python.exe\" -c \"import sys; print\\(sys.version\\); import madmom; print\\(''madmom OK''\\)\")",
+      "Bash(where python:*)",
+      "Bash(pip install:*)",
+      "Bash(python -m beat_detection_onnx.example \"Assets/cyba_-_yellow.mp3\")",
+      "Bash(python -c \"import soundfile as sf; sf.read\\(''c:/Users/janni/Desktop/td_lastBeatStanding2/Assets/cyba_-_yellow.mp3''\\)\")",
+      "Bash(\"c:/Users/janni/Desktop/td_lastBeatStanding2/Miniconda3/envs/td_madmom_311/python.exe\" -c \"import madmom, os; pkg=os.path.dirname\\(madmom.__file__\\); [print\\(open\\(os.path.join\\(pkg,f\\)\\).read\\(\\)\\) for f in os.listdir\\(pkg\\) if ''license'' in f.lower\\(\\)]\")",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(python -c \":*)"
+    ]
+  }
+}

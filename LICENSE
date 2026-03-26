@@ -23,8 +23,8 @@ THIRD-PARTY MODEL FILES — SEPARATE LICENSE
 
 The pre-trained neural network model files located in:
 
-    beat_detection_onnx/models/*.npz
-    beat_detection_onnx/models/filterbank.npy
+    beat_detection/models/*.npz
+    beat_detection/models/filterbank.npy
 
 contain weights derived from the madmom library and are licensed under:
 

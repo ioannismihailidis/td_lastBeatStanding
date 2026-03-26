@@ -47,7 +47,7 @@ Audio In --> [Preprocessing] --> [LSTM Ensemble] --> [DBN Tracker] --> [Post Pro
 The LSTM weights are stored as `.npz` files (numpy archives). They can be loaded from:
 
 - **TouchDesigner VFS** (preferred) — embedded in the `.tox`, fully self-contained
-- **Filesystem** — from the `beat_detection_onnx/models/` directory as a fallback
+- **Filesystem** — from the `beat_detection/models/` directory as a fallback
 
 The TD script auto-detects VFS first, then falls back to the filesystem.
 
@@ -56,9 +56,9 @@ The TD script auto-detects VFS first, then falls back to the filesystem.
 The beat detection library works independently of TouchDesigner:
 
 ```python
-from beat_detection_onnx import BeatDetector, PostProcessor
+from beat_detection import BeatDetector, PostProcessor
 
-detector = BeatDetector(model_dir='beat_detection_onnx/models/', single_model=True)
+detector = BeatDetector(model_dir='beat_detection/models/', single_model=True)
 post = PostProcessor()
 
 # Feed audio chunks (e.g. from a microphone or file)
@@ -75,7 +75,7 @@ Run the included example:
 
 ```bash
 pip install numpy soundfile
-python -m beat_detection_onnx.example Assets/cyba_-_yellow.mp3
+python -m beat_detection.example Assets/cyba_-_yellow.mp3
 ```
 
 ## Re-exporting Models
@@ -84,7 +84,7 @@ The `.npz` weight files are already included. If you need to re-export from madm
 
 ```bash
 pip install madmom onnx numpy
-python -m beat_detection_onnx.export_models
+python -m beat_detection.export_models
 ```
 
 This only needs to be done once. The exported weights are then used at runtime without madmom.
@@ -139,4 +139,4 @@ Demo track: [cyba - Nostalgia](https://ccmixter.org/files/cyba/60166) from ccMix
 
 This project's source code is licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html).
 
-The pre-trained model weights (`beat_detection_onnx/models/*.npz`) are derived from [madmom](https://github.com/CPJKU/madmom) and licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Commercial use of the model weights requires permission from the original authors — see [LICENSE](LICENSE) for details.
+The pre-trained model weights (`beat_detection/models/*.npz`) are derived from [madmom](https://github.com/CPJKU/madmom) and licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/). Commercial use of the model weights requires permission from the original authors — see [LICENSE](LICENSE) for details.
