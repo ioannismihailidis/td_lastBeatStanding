@@ -9,7 +9,7 @@ Real-time beat tracking component for TouchDesigner using LSTM neural networks a
 ## Requirements
 
 - TouchDesigner 2025.32280+
-- Windows 11 (not tested under macOS)
+- tested with Windows 11 or MacOS 15.5
 
 ## Quick Start
 
