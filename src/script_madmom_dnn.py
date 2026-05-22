@@ -4,26 +4,14 @@
 # Web:    https://www.studiofarbraum.com
 # GitHub: https://github.com/ioannismihailidis
 #
-# Real-time beat detection using pure numpy LSTM inference (weights from madmom)
-# Supports loading model weights from the tox VFS or from the filesystem.
-
-import os, sys
-
-# --- PATH SETUP ---
-# Resolve paths relative to the tox (parent COMP), falling back to project.folder
-_tox_par = me.parent().par.externaltox.eval() if me.parent() else ''
-_TOX_DIR = os.path.dirname(tdu.expandPath(_tox_par)) if _tox_par else project.folder
-
-# Add project folder so beat_detection package can be imported
-if _TOX_DIR not in sys.path:
-	sys.path.insert(0, _TOX_DIR)
-# ------------------------------
+# Real-time beat detection using pure numpy LSTM inference (weights from madmom).
+# Model weights are loaded from the sibling 'virtualFile' COMP's VFS.
 
 import numpy as np
 from beat_detection import BeatDetector
 
-# Filesystem fallback path
-_MODEL_DIR = os.path.join(_TOX_DIR, "beat_detection", "models")
+# Sibling COMP that hosts the model files in its VFS
+_VFS_COMP_NAME = 'virtualFile'
 
 _state = {
 	"detector": None,
@@ -32,47 +20,31 @@ _state = {
 
 
 def _load_vfs_files():
-	"""Try to load model files from the parent COMP's VFS.
-	Returns a dict {filename: bytes} or None if VFS is empty/unavailable.
-	"""
-	try:
-		vfs = me.parent().vfs
-		files = {}
-		for item in vfs:
-			files[item.name] = bytes(item.byteArray)
-		if 'config.json' in files:
-			return files
-	except:
-		pass
-	return None
+	"""Load model files from the sibling VFS COMP. Returns {filename: bytes}."""
+	comp = me.parent().op(_VFS_COMP_NAME)
+	if comp is None:
+		raise RuntimeError(
+			f"VFS host COMP '{_VFS_COMP_NAME}' not found next to {me.path}"
+		)
+	files = {item.name: bytes(item.byteArray) for item in comp.vfs}
+	if 'config.json' not in files:
+		raise RuntimeError(
+			f"'config.json' missing in {comp.path} VFS (found: {sorted(files)})"
+		)
+	return files
 
 
 def _init(min_bpm, max_bpm, trans_lambda, obs_lambda, single_model, act_gate, rms_gate):
-	# Try VFS first, fall back to filesystem
-	vfs_files = _load_vfs_files()
-
-	if vfs_files is not None:
-		_state["detector"] = BeatDetector(
-			model_files=vfs_files,
-			min_bpm=min_bpm,
-			max_bpm=max_bpm,
-			transition_lambda=trans_lambda,
-			observation_lambda=obs_lambda,
-			act_gate=act_gate,
-			rms_gate=rms_gate,
-			single_model=single_model,
-		)
-	else:
-		_state["detector"] = BeatDetector(
-			model_dir=_MODEL_DIR,
-			min_bpm=min_bpm,
-			max_bpm=max_bpm,
-			transition_lambda=trans_lambda,
-			observation_lambda=obs_lambda,
-			act_gate=act_gate,
-			rms_gate=rms_gate,
-			single_model=single_model,
-		)
+	_state["detector"] = BeatDetector(
+		model_files=_load_vfs_files(),
+		min_bpm=min_bpm,
+		max_bpm=max_bpm,
+		transition_lambda=trans_lambda,
+		observation_lambda=obs_lambda,
+		act_gate=act_gate,
+		rms_gate=rms_gate,
+		single_model=single_model,
+	)
 	_state["_params"] = (min_bpm, max_bpm, trans_lambda, obs_lambda, single_model)
 
 

@@ -13,13 +13,14 @@ Real-time beat tracking component for TouchDesigner using LSTM neural networks a
 
 ## Quick Start
 
-1. Drag `td_lastBeatStanding.tox` into your TouchDesigner project.
-2. Connect an audio CHOP (e.g. Audio Device In, Audio File In) to the component's input.
-3. The component outputs a single CHOP with `beat`, `bpm`, `phase`, `breakdown`, and other channels.
+1. Download the latest `td_lastBeatStanding.tox` from the [Releases](https://github.com/ioannismihailidis/td_lastBeatStanding/releases) page.
+2. Drag `td_lastBeatStanding.tox` into your TouchDesigner project.
+3. Connect an audio CHOP (e.g. Audio Device In, Audio File In) to the component's input.
+4. The component outputs a single CHOP with `beat`, `bpm`, `phase`, `breakdown`, and other channels.
 
 That's it — no installation, no environment setup.
 
-To try the included example, open `td_lastBeatStanding_example.toe`.
+To try the included example, clone the repository and open `td_lastBeatStanding_example.toe`.
 
 <img width="1891" height="837" alt="image" src="https://github.com/user-attachments/assets/5824eec5-4d71-45ab-8710-2b183fa621e2" />
 
