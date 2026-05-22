@@ -16,15 +16,8 @@
 
 import os, sys
 
-# --- PATH SETUP (in case this script loads before the DNN script) ---
-_tox_par = me.parent().par.externaltox.eval() if me.parent() else ''
-_TOX_DIR = os.path.dirname(tdu.expandPath(_tox_par)) if _tox_par else project.folder
-if _TOX_DIR not in sys.path:
-	sys.path.insert(0, _TOX_DIR)
-# ------------------------------
-
 import numpy as np
-from beat_detection import PostProcessor
+from post_processor import PostProcessor
 
 _post_proc = PostProcessor()
 
